@@ -1,18 +1,17 @@
 import os
 import time
 
-import adafruit_requests as requests
+import adafruit_connection_manager
+import adafruit_requests
 import analogio
 import board
+import busio
+import digitalio
 import displayio
 import rtc
 import terminalio
 from adafruit_display_text.label import Label
-
-try:
-    import wifi
-except ImportError:
-    wifi = None
+from adafruit_esp32spi import adafruit_esp32spi, adafruit_esp32spi_wifimanager
 
 DAY_LIGHT_THRESHOLD = 20000
 NIGHT_LIGHT_THRESHOLD = 12000
@@ -23,16 +22,6 @@ light_sensor = analogio.AnalogIn(board.LIGHT)
 last_sync_attempt = 0
 current_view = "time"
 last_view_change = time.monotonic()
-
-
-def load_wifi_credentials():
-    """Read Wi-Fi settings from settings.toml."""
-    ssid = os.getenv("CIRCUITPY_WIFI_SSID")
-    password = os.getenv("CIRCUITPY_WIFI_PASSWORD")
-    return ssid or "", password or ""
-
-
-WIFI_SSID, WIFI_PASSWORD = load_wifi_credentials()
 
 
 # Create a display group to hold our visual elements
@@ -71,6 +60,53 @@ warning_banner.anchor_point = (0.5, 0.0)
 warning_banner.anchored_position = (board.DISPLAY.width // 2, 8)
 warning_banner.hidden = True
 main_group.append(warning_banner)
+
+ssid = os.getenv("CIRCUITPY_WIFI_SSID")
+password = os.getenv("CIRCUITPY_WIFI_PASSWORD")
+
+if ssid and password:
+    esp32_cs = digitalio.DigitalInOut(board.ESP_CS)
+    esp32_ready = digitalio.DigitalInOut(board.ESP_BUSY)
+    esp32_reset = digitalio.DigitalInOut(board.ESP_RESET)
+    spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
+    esp = adafruit_esp32spi.ESP_SPIcontrol(
+        spi, esp32_cs, esp32_ready, esp32_reset, debug=False
+    )
+    pool = adafruit_connection_manager.get_radio_socketpool(esp)
+    ssl_context = adafruit_connection_manager.get_radio_ssl_context(esp)
+    requests = adafruit_requests.Session(pool, ssl_context)
+
+    if esp.status == adafruit_esp32spi.WL_IDLE_STATUS:
+        print("ESP32 found and in idle mode")
+        print("Firmware vers.", esp.firmware_version)
+        print("MAC addr:", [hex(i) for i in esp.MAC_address])
+
+    for ap in esp.scan_networks():
+        try:
+            ssid_name = str(ap.ssid, "utf-8")
+        except Exception:
+            ssid_name = str(ap.ssid)
+        print("\t%s\t\tRSSI: %d" % (ssid_name, ap.rssi))
+
+    print("Connecting to AP...")
+    while not esp.is_connected:
+        try:
+            esp.connect_AP(ssid, password)
+        except RuntimeError as exc:
+            print("could not connect to AP, retrying:", exc)
+            continue
+
+    print("Connected to AP")
+    print("WiFi connected:", esp.is_connected)
+
+    wifi = adafruit_esp32spi_wifimanager.WiFiManager(
+        esp, ssid, password, debug=True
+    )
+else:
+    esp = None
+    wifi = None
+    requests = None
+
 
 def get_ambient_lighting():
     """Return the raw analog value from the PyPortal light sensor."""
@@ -186,29 +222,28 @@ def update_main_view():
 
 
 def sync_time_from_network():
-    """Fetch time from a public API and update the RTC without crashing."""
-    global last_sync_attempt, WIFI_SSID, WIFI_PASSWORD
-
-    last_sync_attempt = time.monotonic()
+    """Fetch the current unix time and update the RTC once the radio is connected."""
+    global last_sync_attempt
     response = None
+    last_sync_attempt = time.monotonic()
 
     try:
-        WIFI_SSID, WIFI_PASSWORD = load_wifi_credentials()
-        if not WIFI_SSID or not WIFI_PASSWORD or WIFI_SSID.startswith("Your_"):
-            raise RuntimeError("Wi-Fi not configured")
+        if requests is None:
+            raise RuntimeError("Wi-Fi not initialized")
 
-        if wifi is not None and not wifi.radio.connected:
-            wifi.radio.connect(WIFI_SSID, WIFI_PASSWORD)
+        response = requests.get("https://worldtimeapi.org/api/ip", timeout=20)
+        if response.status_code != 200:
+            raise RuntimeError("HTTP status {}".format(response.status_code))
 
-        response = requests.get("https://worldtimeapi.org/api/ip", timeout=10)
         payload = response.json()
         if "unixtime" not in payload:
             raise ValueError("Missing unixtime field")
-        time_tuple = time.localtime(int(payload["unixtime"]))
-        rtc.RTC().datetime = time_tuple
+
+        rtc.RTC().datetime = time.localtime(int(payload["unixtime"]))
         set_warning_banner("")
         return True
-    except Exception:
+    except Exception as exc:
+        print("SYNC_ERROR:", exc)
         set_warning_banner("Warning: Sync Failed")
         return False
     finally:
@@ -219,6 +254,7 @@ def sync_time_from_network():
                 pass
 
 
+set_warning_banner("")
 sync_time_from_network()
 update_main_view()
 
