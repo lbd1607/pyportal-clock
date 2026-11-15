@@ -1,6 +1,9 @@
 # Sensitive Credentials (DO NOT COMMIT)
 settings.toml
 
+# Python cache files
+__pycache__/
+
 # OS-generated metadata files
 .DS_Store
 Thumbs.db
@@ -12,5 +15,5 @@ desktop.ini
 *.swp
 *.swo
 
-# Optional: Third-party libraries (uncomment if you prefer managing them via Circup / requirements.txt)
-# /lib/
+# Local docs
+docs/local
