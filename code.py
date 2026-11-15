@@ -1,3 +1,4 @@
+import os
 import time
 
 import adafruit_requests as requests
@@ -8,6 +9,11 @@ import rtc
 import terminalio
 from adafruit_display_text.label import Label
 
+try:
+    import wifi
+except ImportError:
+    wifi = None
+
 DAY_LIGHT_THRESHOLD = 20000
 NIGHT_LIGHT_THRESHOLD = 12000
 TIME_SYNC_INTERVAL_SECONDS = 3600
@@ -17,6 +23,16 @@ light_sensor = analogio.AnalogIn(board.LIGHT)
 last_sync_attempt = 0
 current_view = "time"
 last_view_change = time.monotonic()
+
+
+def load_wifi_credentials():
+    """Read Wi-Fi settings from settings.toml."""
+    ssid = os.getenv("CIRCUITPY_WIFI_SSID")
+    password = os.getenv("CIRCUITPY_WIFI_PASSWORD")
+    return ssid or "", password or ""
+
+
+WIFI_SSID, WIFI_PASSWORD = load_wifi_credentials()
 
 
 # Create a display group to hold our visual elements
@@ -171,12 +187,19 @@ def update_main_view():
 
 def sync_time_from_network():
     """Fetch time from a public API and update the RTC without crashing."""
-    global last_sync_attempt
+    global last_sync_attempt, WIFI_SSID, WIFI_PASSWORD
 
     last_sync_attempt = time.monotonic()
     response = None
 
     try:
+        WIFI_SSID, WIFI_PASSWORD = load_wifi_credentials()
+        if not WIFI_SSID or not WIFI_PASSWORD or WIFI_SSID.startswith("Your_"):
+            raise RuntimeError("Wi-Fi not configured")
+
+        if wifi is not None and not wifi.radio.connected:
+            wifi.radio.connect(WIFI_SSID, WIFI_PASSWORD)
+
         response = requests.get("https://worldtimeapi.org/api/ip", timeout=10)
         payload = response.json()
         if "unixtime" not in payload:

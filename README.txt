@@ -18,9 +18,9 @@ We can turn this simple service into its own stand-alone devices using
 the PyPortal.
 
 *** You must first tell the PyPortal your WiFi SSID and Password. ***
-This is set in the 'secrets.py' file on the CIRCUITPY drive. Open it
-with any text editor and change the 'ssid' and 'password' values from
-CHANGE ME to whatever is your access point and password.
+This is set in the 'settings.toml' file on the CIRCUITPY drive. Open it
+with any text editor and change the CIRCUITPY_WIFI_SSID and
+CIRCUITPY_WIFI_PASSWORD values to match your access point and password.
 
 On start up, we display a welcome.bmp image file and play a welcome.wav
 file. Delete or rename the welcome.wav and welcome.bmp files to stop them
