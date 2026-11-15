@@ -1,0 +1,16 @@
+# Sensitive Credentials (DO NOT COMMIT)
+settings.toml
+
+# OS-generated metadata files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Code Editor and IDE configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Optional: Third-party libraries (uncomment if you prefer managing them via Circup / requirements.txt)
+# /lib/
