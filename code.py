@@ -11,9 +11,13 @@ from adafruit_display_text.label import Label
 DAY_LIGHT_THRESHOLD = 20000
 NIGHT_LIGHT_THRESHOLD = 12000
 TIME_SYNC_INTERVAL_SECONDS = 3600
+VIEW_TIME_SECONDS = 18
+VIEW_DATE_SECONDS = 10
 
 light_sensor = analogio.AnalogIn(board.LIGHT)
 last_sync_attempt = 0
+current_view = "time"
+last_view_change = time.monotonic()
 
 
 # Create a display group to hold our visual elements
@@ -22,7 +26,7 @@ board.DISPLAY.root_group = main_group
 
 # Create the base background color palette and tilegrid.
 bg_palette = displayio.Palette(1)
-bg_palette[0] = 0x0D5D9C  # Deep blue: default day mode
+bg_palette[0] = 0x101010  # Black: default analog-digital mode
 bg_bitmap = displayio.Bitmap(board.DISPLAY.width, board.DISPLAY.height, 1)
 bg_tilegrid = displayio.TileGrid(bg_bitmap, pixel_shader=bg_palette)
 main_group.append(bg_tilegrid)
@@ -31,18 +35,13 @@ main_group.append(bg_tilegrid)
 text_label = Label(
     terminalio.FONT,
     text="Clock",
-    color=0xF5F9FF,
-    scale=4,
+    color=0x7CFF9C,  # Soft green digits for the analog-digital look
+    scale=5,
     x=0,
     y=0,
 )
 text_label.anchor_point = (0.5, 0.5)
-text_label.anchored_position = (
-    board.DISPLAY.width // 2,
-    board.DISPLAY.height // 2,
-)
-text_label.x = 30
-text_label.y = 30
+text_label.anchored_position = (board.DISPLAY.width // 2, board.DISPLAY.height // 2)
 main_group.append(text_label)
 
 warning_banner = Label(
@@ -57,11 +56,6 @@ warning_banner.anchor_point = (0.5, 0.0)
 warning_banner.anchored_position = (board.DISPLAY.width // 2, 8)
 warning_banner.hidden = True
 main_group.append(warning_banner)
-
-VIEW_TIME_SECONDS = 10
-VIEW_DATE_SECONDS = 5
-current_view = "time"
-last_view_change = time.monotonic()
 
 
 def get_ambient_lighting():
@@ -84,19 +78,19 @@ def apply_light_theme(light_level):
 
     if mode == "night":
         board.DISPLAY.brightness = 0.35
-        bg_palette[0] = 0x102A43  # Dark navy-blue for low-glare night view
-        text_label.color = 0xD9ECFF  # Soft cool white text
-        warning_banner.color = 0xF5A623  # Warm amber that reads without clashing
+        bg_palette[0] = 0x0A0A0A  # Near-black background for low-glare night view
+        text_label.color = 0x7CFF9C  # Green numerals for a classic clock glow
+        warning_banner.color = 0xE7A84D  # Warm amber warning accent
     elif mode == "dim":
         board.DISPLAY.brightness = 0.7
-        bg_palette[0] = 0x1F4E79  # Muted blue-gray for dim/indoor lighting
-        text_label.color = 0xEAF5FF  # Gentle blue-white text
-        warning_banner.color = 0xF0A64A  # Slightly softer orange for dim mode
+        bg_palette[0] = 0x1B1B1B  # Dark gray for dim indoor lighting
+        text_label.color = 0x8DFFAC  # Slightly brighter green in dim mode
+        warning_banner.color = 0xE7A84D  # Warm amber warning accent
     else:
         board.DISPLAY.brightness = 1.0
-        bg_palette[0] = 0x0D5D9C  # Strong blue for daytime contrast
-        text_label.color = 0xF5F9FF  # Bright white text
-        warning_banner.color = 0xF5A623  # Warm amber remains readable on blue
+        bg_palette[0] = 0x2A2A2A  # Medium gray for daytime contrast
+        text_label.color = 0x7CFF9C  # Green numerals remain the main focal point
+        warning_banner.color = 0xE7A84D  # Warm amber remains readable against gray
 
 
 def set_warning_banner(message):
@@ -119,7 +113,7 @@ def format_time_string():
 
 
 def format_date_string():
-    """Return the current date in a friendly, full-text format."""
+    """Return the current date on two lines without the year."""
     current = time.localtime()
     weekdays = [
         "Monday",
@@ -144,23 +138,9 @@ def format_date_string():
         "November",
         "December",
     ]
-    return "{0}, {1} {2}, {3}".format(
-        weekdays[current[6]], months[current[1] - 1], current[2], current[0]
+    return "{0}\n{1} {2}".format(
+        weekdays[current[6]], months[current[1] - 1], current[2]
     )
-
-
-def animate_view_transition(new_view):
-    """Slide the main label while swapping between clock and date."""
-    global current_view
-
-    current_view = new_view
-    for offset in range(0, 28, 4):
-        text_label.x = offset
-        time.sleep(0.02)
-    for offset in range(28, -28, -4):
-        text_label.x = offset
-        time.sleep(0.02)
-    text_label.x = 0
 
 
 def update_main_view():
@@ -171,16 +151,23 @@ def update_main_view():
     duration = VIEW_TIME_SECONDS if current_view == "time" else VIEW_DATE_SECONDS
 
     if (now - last_view_change) >= duration:
-        next_view = "date" if current_view == "time" else "time"
-        animate_view_transition(next_view)
+        current_view = "date" if current_view == "time" else "time"
         last_view_change = now
 
     if current_view == "time":
         text_label.text = format_time_string()
-        text_label.scale = 4
+        text_label.scale = 5
+        text_label.anchored_position = (
+            board.DISPLAY.width // 2,
+            board.DISPLAY.height // 2,
+        )
     else:
         text_label.text = format_date_string()
-        text_label.scale = 2
+        text_label.scale = 3
+        text_label.anchored_position = (
+            board.DISPLAY.width // 2,
+            board.DISPLAY.height // 2,
+        )
 
 
 def sync_time_from_network():
@@ -188,12 +175,13 @@ def sync_time_from_network():
     global last_sync_attempt
 
     last_sync_attempt = time.monotonic()
+    response = None
 
     try:
-        response = requests.get("https://worldtimeapi.org/api/ip")
+        response = requests.get("https://worldtimeapi.org/api/ip", timeout=10)
         payload = response.json()
-        response.close()
-
+        if "unixtime" not in payload:
+            raise ValueError("Missing unixtime field")
         time_tuple = time.localtime(int(payload["unixtime"]))
         rtc.RTC().datetime = time_tuple
         set_warning_banner("")
@@ -201,6 +189,12 @@ def sync_time_from_network():
     except Exception:
         set_warning_banner("Warning: Sync Failed")
         return False
+    finally:
+        if response is not None:
+            try:
+                response.close()
+            except Exception:
+                pass
 
 
 sync_time_from_network()
