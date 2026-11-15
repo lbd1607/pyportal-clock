@@ -41,7 +41,7 @@ board.DISPLAY.root_group = main_group
 
 # Create the base background color palette and tilegrid.
 bg_palette = displayio.Palette(1)
-bg_palette[0] = 0x101010  # Black: default analog-digital mode
+bg_palette[0] = 0x0A0A0A  # Near-black: consistent startup and runtime background
 bg_bitmap = displayio.Bitmap(board.DISPLAY.width, board.DISPLAY.height, 1)
 bg_tilegrid = displayio.TileGrid(bg_bitmap, pixel_shader=bg_palette)
 main_group.append(bg_tilegrid)
@@ -49,7 +49,7 @@ main_group.append(bg_tilegrid)
 # Create the main label that reflects the active lighting mode.
 text_label = Label(
     terminalio.FONT,
-    text="Clock",
+    text="",
     color=0x7CFF9C,  # Soft green digits for the analog-digital look
     scale=5,
     x=0,
