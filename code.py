@@ -1,15 +1,19 @@
 import time
 
+import adafruit_requests as requests
 import analogio
 import board
 import displayio
+import rtc
 import terminalio
 from adafruit_display_text.label import Label
 
 DAY_LIGHT_THRESHOLD = 20000
 NIGHT_LIGHT_THRESHOLD = 12000
+TIME_SYNC_INTERVAL_SECONDS = 3600
 
 light_sensor = analogio.AnalogIn(board.LIGHT)
+last_sync_attempt = 0
 
 
 # Create a display group to hold our visual elements
@@ -41,6 +45,19 @@ text_label.x = 30
 text_label.y = 30
 main_group.append(text_label)
 
+warning_banner = Label(
+    terminalio.FONT,
+    text="",
+    color=0xF5A623, # Warm amber that reads without clashing
+    scale=1,
+    x=0,
+    y=8,
+)
+warning_banner.anchor_point = (0.5, 0.0)
+warning_banner.anchored_position = (board.DISPLAY.width // 2, 8)
+warning_banner.hidden = True
+main_group.append(warning_banner)
+
 
 def get_ambient_lighting():
     """Return the raw analog value from the PyPortal light sensor."""
@@ -65,19 +82,58 @@ def apply_light_theme(light_level):
         bg_palette[0] = 0x102A43  # Dark navy-blue for low-glare night view
         text_label.color = 0xD9ECFF  # Soft cool white text
         text_label.text = "Night Mode"
+        warning_banner.color = 0xF5A623  # Warm amber that reads without clashing
     elif mode == "dim":
         board.DISPLAY.brightness = 0.7
         bg_palette[0] = 0x1F4E79  # Muted blue-gray for dim/indoor lighting
         text_label.color = 0xEAF5FF  # Gentle blue-white text
         text_label.text = "Low Light"
+        warning_banner.color = 0xF0A64A  # Slightly softer orange for dim mode
     else:
         board.DISPLAY.brightness = 1.0
         bg_palette[0] = 0x0D5D9C  # Strong blue for daytime contrast
         text_label.color = 0xF5F9FF  # Bright white text
         text_label.text = "Day Mode"
+        warning_banner.color = 0xF5A623  # Warm amber remains readable on blue
 
+
+def set_warning_banner(message):
+    """Show or hide the sync warning banner without breaking the UI loop."""
+    if message:
+        warning_banner.text = message
+        warning_banner.hidden = False
+    else:
+        warning_banner.text = ""
+        warning_banner.hidden = True
+
+
+def sync_time_from_network():
+    """Fetch time from a public API and update the RTC without crashing."""
+    global last_sync_attempt
+
+    last_sync_attempt = time.monotonic()
+
+    try:
+        response = requests.get("https://worldtimeapi.org/api/ip")
+        payload = response.json()
+        response.close()
+
+        time_tuple = time.localtime(int(payload["unixtime"]))
+        rtc.RTC().datetime = time_tuple
+        set_warning_banner("")
+        return True
+    except Exception:
+        set_warning_banner("Warning: Sync Failed")
+        return False
+
+
+sync_time_from_network()
 
 while True:
     current_light = get_ambient_lighting()
     apply_light_theme(current_light)
+
+    if (time.monotonic() - last_sync_attempt) >= TIME_SYNC_INTERVAL_SECONDS:
+        sync_time_from_network()
+
     time.sleep(2)
