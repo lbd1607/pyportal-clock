@@ -13,7 +13,6 @@ NIGHT_LIGHT_THRESHOLD = 12000
 TIME_SYNC_INTERVAL_SECONDS = 3600
 VIEW_TIME_SECONDS = 18
 VIEW_DATE_SECONDS = 10
-
 light_sensor = analogio.AnalogIn(board.LIGHT)
 last_sync_attempt = 0
 current_view = "time"
@@ -47,7 +46,7 @@ main_group.append(text_label)
 warning_banner = Label(
     terminalio.FONT,
     text="",
-    color=0xF5A623,  # Warm amber that reads without clashing
+    color=0xE7A84D,  # Warm amber warning accent
     scale=1,
     x=0,
     y=8,
@@ -56,7 +55,6 @@ warning_banner.anchor_point = (0.5, 0.0)
 warning_banner.anchored_position = (board.DISPLAY.width // 2, 8)
 warning_banner.hidden = True
 main_group.append(warning_banner)
-
 
 def get_ambient_lighting():
     """Return the raw analog value from the PyPortal light sensor."""
@@ -75,19 +73,20 @@ def get_light_mode(light_level):
 def apply_light_theme(light_level):
     """Update the screen backlight and UI palette based on ambient light."""
     mode = get_light_mode(light_level)
+    base_brightness = 0.35 if mode == "night" else 0.7 if mode == "dim" else 1.0
 
     if mode == "night":
-        board.DISPLAY.brightness = 0.35
+        board.DISPLAY.brightness = base_brightness
         bg_palette[0] = 0x0A0A0A  # Near-black background for low-glare night view
         text_label.color = 0x7CFF9C  # Green numerals for a classic clock glow
         warning_banner.color = 0xE7A84D  # Warm amber warning accent
     elif mode == "dim":
-        board.DISPLAY.brightness = 0.7
+        board.DISPLAY.brightness = base_brightness
         bg_palette[0] = 0x1B1B1B  # Dark gray for dim indoor lighting
         text_label.color = 0x8DFFAC  # Slightly brighter green in dim mode
         warning_banner.color = 0xE7A84D  # Warm amber warning accent
     else:
-        board.DISPLAY.brightness = 1.0
+        board.DISPLAY.brightness = base_brightness
         bg_palette[0] = 0x2A2A2A  # Medium gray for daytime contrast
         text_label.color = 0x7CFF9C  # Green numerals remain the main focal point
         warning_banner.color = 0xE7A84D  # Warm amber remains readable against gray
